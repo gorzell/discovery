@@ -1,9 +1,11 @@
 #![no_main]
 #![no_std]
 
+use core::fmt::Write;
 use cortex_m_rt::entry;
-use rtt_target::rtt_init_print;
+use heapless::Vec;
 use panic_rtt_target as _;
+use rtt_target::{rprintln, rtt_init_print};
 
 #[cfg(feature = "v1")]
 use microbit::{
@@ -50,8 +52,33 @@ fn main() -> ! {
         UartePort::new(serial)
     };
 
-    nb::block!(serial.write(b'X')).unwrap();
-    nb::block!(serial.flush()).unwrap();
+    // writeln!(serial, "The quick brown fox jumps over the lazy dog.");
+    // nb::block!(serial.flush()).unwrap();
 
-    loop {}
+    let mut buffer: Vec<u8, 32> = Vec::new();
+
+    loop {
+        let byte = nb::block!(serial.read()).unwrap();
+        if byte == b'\r' {
+            buffer.reverse();
+            writeln!(serial, "{}", core::str::from_utf8(&buffer).unwrap()).unwrap();
+            nb::block!(serial.flush()).unwrap();
+            buffer.clear();
+        } else {
+            match buffer.push(byte) {
+                Ok(_) => {}
+                Err(_) => {
+                    buffer.reverse();
+                    writeln!(
+                        serial,
+                        "Exceded buffer size, here is what you had so far:{}",
+                        core::str::from_utf8(&buffer).unwrap()
+                    )
+                    .unwrap();
+                    nb::block!(serial.flush()).unwrap();
+                    buffer.clear();
+                }
+            }
+        }
+    }
 }
